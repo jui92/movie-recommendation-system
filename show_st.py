@@ -1,4 +1,4 @@
-import os, time, requests, joblib, numpy as np, pandas as pd, streamlit as st, altair as alt
+import os, requests, joblib, numpy as np, pandas as pd, streamlit as st, altair as alt
 from pathlib import Path
 from autoint import AutoIntModel, predict_model
 
@@ -10,7 +10,8 @@ st.set_page_config(page_title="AutoInt Movie Recs (Pro)", layout="wide")
 def _pick(*cands):
     for p in cands:
         p = Path(p)
-        if p.exists(): return p
+        if p.exists():
+            return p
     return None
 
 def _find_roots():
@@ -65,7 +66,8 @@ def get_user_non_seed_dict(movies_df, users_df, user_seen):
 
 def _encode_with_label_encoders(df, encs):
     for col, le in encs.items():
-        if col not in df.columns: continue
+        if col not in df.columns:
+            continue
         vals = df[col].fillna('no')
         # 인코더 클래스 dtype에 맞춤
         if getattr(le, 'classes_', None) is not None and le.classes_.dtype.kind not in {'U','S','O'}:
@@ -76,7 +78,9 @@ def _encode_with_label_encoders(df, encs):
         df[col] = le.transform(vals)
     return df
 
-def get_user_info(uid, users_df): return users_df[users_df['user_id']==uid]
+def get_user_info(uid, users_df):
+    return users_df[users_df['user_id']==uid]
+
 def get_user_past(uid, ratings_df, movies_df):
     return ratings_df[(ratings_df['user_id']==uid)&(ratings_df['rating']>=4)].merge(movies_df, on='movie_id')
 
@@ -85,7 +89,8 @@ def get_user_past(uid, ratings_df, movies_df):
 # =========================
 def get_recom(uid, user_non_seen_dict, users_df, movies_df, r_year, r_month, model, encs, topk=20):
     cand = user_non_seen_dict.get(uid, [])
-    if not cand: return pd.DataFrame(columns=list(movies_df.columns)+['score'])
+    if not cand:
+        return pd.DataFrame(columns=list(movies_df.columns)+['score'])
     df_movies = pd.DataFrame({'movie_id': cand}).merge(movies_df, on='movie_id', how='left')
     df_user   = pd.DataFrame({'user_id':[uid]*len(df_movies)}).merge(users_df, on='user_id', how='left')
     df_user['rating_year']=r_year; df_user['rating_month']=r_month
@@ -97,7 +102,8 @@ def get_recom(uid, user_non_seen_dict, users_df, movies_df, r_year, r_month, mod
     merge_data = _encode_with_label_encoders(merge_data, encs)
 
     top = predict_model(model, merge_data, topk=max(topk, 50))   # 넉넉히
-    if not top: return pd.DataFrame(columns=list(movies_df.columns)+['score'])
+    if not top:
+        return pd.DataFrame(columns=list(movies_df.columns)+['score'])
     enc_ids = np.array([t[0] for t in top])
     scores  = {int(t[0]): float(t[1]) for t in top}
 
@@ -131,7 +137,8 @@ def get_recom(uid, user_non_seen_dict, users_df, movies_df, r_year, r_month, mod
 # 재랭킹(최근작) & 다양성
 # =========================
 def rerank_by_recency(df, alpha=0.15, recent_year=2010):
-    if df.empty: return df
+    if df.empty:
+        return df
     y = pd.to_numeric(df['movie_year'], errors='coerce').fillna(0)
     bonus = (y >= recent_year).astype(float) * float(alpha)
     df = df.copy()
@@ -139,7 +146,8 @@ def rerank_by_recency(df, alpha=0.15, recent_year=2010):
     return df.sort_values('score_adj', ascending=False)
 
 def diversify_by_genre(df, topk=20, lam=0.15, genre_cols=('genre1','genre2','genre3')):
-    if df.empty: return df
+    if df.empty:
+        return df
     selected, seen_genres = [], set()
     pool = df.copy()
     for _ in range(min(topk, len(pool))):
@@ -158,7 +166,8 @@ def diversify_by_genre(df, topk=20, lam=0.15, genre_cols=('genre1','genre2','gen
 # 추천 이유
 # =========================
 def reasons_for(user_like_df, rec_df):
-    if rec_df.empty: return rec_df
+    if rec_df.empty:
+        return rec_df
     liked_genres = set(user_like_df[['genre1','genre2','genre3']].values.ravel()) - {None, 'None', 'no', np.nan}
     liked_decades = set(user_like_df['movie_decade'].dropna().astype(str).values)
     outs = []
@@ -174,22 +183,32 @@ def reasons_for(user_like_df, rec_df):
     return rec_df
 
 # =========================
-# 평가 (AUC & Precision@K)
+# 평가 (AUC & Precision@K)  —— KeyError 수정 버전
 # =========================
 @st.cache_data(show_spinner=False)
 def evaluate_model_sample(users_sample, k=10, max_items_per_user=300):
     FEATURE_COLS = ['user_id','movie_id','movie_decade','movie_year','rating_year',
                     'rating_month','rating_decade','genre1','genre2','genre3',
                     'gender','age','occupation','zip']
-    auc_list, p_at_k_list = [], []
     rows = []
+    users_sample = list(pd.unique(pd.Series(users_sample)))
+
     for u in users_sample:
         df_u = ratings_df[ratings_df['user_id']==u]
-        if df_u.empty: continue
-        # 평가용: 이 사용자가 실제로 평점 남긴 영화만으로 예측 → AUC, P@K
-        tmp = df_u.merge(movies_df, on='movie_id', how='left').merge(users_df, on='user_id', how='left')
-        tmp = tmp.head(max_items_per_user).copy()
-        # 필요한 파생
+        if df_u.empty:
+            continue
+
+        # 반드시 reset_index(drop=True)로 인덱스 정렬
+        tmp = (
+            df_u
+            .merge(movies_df, on='movie_id', how='left')
+            .merge(users_df, on='user_id', how='left')
+            .head(max_items_per_user)
+            .reset_index(drop=True)
+            .copy()
+        )
+
+        # 파생/결측 보정
         if 'movie_decade' not in tmp:
             tmp['movie_decade'] = (tmp.get('movie_year', pd.Series([2000]*len(tmp))) // 10 * 10).astype(str) + 's'
         if 'rating_year' not in tmp:  tmp['rating_year']  = 2000
@@ -201,42 +220,47 @@ def evaluate_model_sample(users_sample, k=10, max_items_per_user=300):
         for c in ['gender','age','occupation','zip']:
             if c not in tmp: tmp[c] = 'unknown'
         tmp = tmp.fillna('no')
-        # 인코딩
+
+        # 인코딩 (인덱스 보존)
         enc_in = tmp[FEATURE_COLS].copy()
         enc_in = _encode_with_label_encoders(enc_in, encs)
+
         # 예측
         X = enc_in.values.astype('int64')
-        s = model(X, training=False).numpy().reshape(-1)
-        y_true = (df_u.loc[enc_in.index, 'rating'] >= 4).astype(int).values
+        scores = model(X, training=False).numpy().reshape(-1)
 
-        # AUC (유효한 경우에 한해)
+        # 정답 라벨: 반드시 tmp에서 추출 (df_u 아님)
+        if 'rating' in tmp.columns:
+            y_true = (pd.to_numeric(tmp['rating'], errors='coerce').fillna(0) >= 4).astype(int).values
+        else:
+            continue
+
+        # AUC
         try:
             from sklearn.metrics import roc_auc_score
-            if len(np.unique(y_true)) > 1:
-                auc = roc_auc_score(y_true, s)
-                auc_list.append(auc)
+            auc = float(roc_auc_score(y_true, scores)) if len(np.unique(y_true)) > 1 else np.nan
         except Exception:
-            pass
+            auc = np.nan
 
         # Precision@K
-        order = np.argsort(-s)[:k]
-        p_at_k = y_true[order].mean() if len(order)>0 else np.nan
-        p_at_k_list.append(p_at_k)
+        order = np.argsort(-scores)[:k]
+        p_at_k = float(np.mean(y_true[order])) if len(order) > 0 else np.nan
 
-        rows.append({'user_id': u, 'auc': auc_list[-1] if len(auc_list)>0 else np.nan,
-                     'precision_at_k': p_at_k})
+        rows.append({'user_id': u, 'auc': auc, 'precision_at_k': p_at_k})
+
     eval_df = pd.DataFrame(rows)
-    return eval_df, float(np.nanmean(eval_df['auc'])), float(np.nanmean(eval_df['precision_at_k']))
+    mean_auc = float(np.nanmean(eval_df['auc'])) if not eval_df.empty else np.nan
+    mean_p   = float(np.nanmean(eval_df['precision_at_k'])) if not eval_df.empty else np.nan
+    return eval_df, mean_auc, mean_p
 
 # =========================
-# 포스터/줄거리 (OMDb/TMDB)
+# 포스터/줄거리 (OMDb/TMDB) — 키 없으면 자동 생략
 # =========================
 OMDB_KEY = st.secrets.get("OMDB_API_KEY") or os.getenv("OMDB_API_KEY")
 TMDB_KEY = st.secrets.get("TMDB_API_KEY") or os.getenv("TMDB_API_KEY")
 
 @st.cache_data(show_spinner=False)
 def fetch_poster(title:str, year:int|str=None):
-    # OMDb 우선, 실패 시 TMDB 간단 플로우
     if OMDB_KEY:
         try:
             params = {"t": title, "y": str(year) if year else "", "apikey": OMDB_KEY, "plot": "short"}
@@ -251,7 +275,6 @@ def fetch_poster(title:str, year:int|str=None):
             pass
     if TMDB_KEY:
         try:
-            # 1) search
             r = requests.get("https://api.themoviedb.org/3/search/movie",
                              params={"api_key": TMDB_KEY, "query": title, "year": year or ""},
                              timeout=8)
@@ -267,15 +290,16 @@ def fetch_poster(title:str, year:int|str=None):
     return None, ""
 
 def show_posters(rec_df, max_cards=8):
-    if rec_df.empty: 
+    if rec_df.empty:
         st.info("표시할 추천이 없습니다.")
         return
     n = min(max_cards, len(rec_df))
     cols = st.columns(4)
     for i, (_, r) in enumerate(rec_df.head(n).iterrows()):
         with cols[i % 4]:
-            poster, overview = fetch_poster(str(r['title']), int(r.get('movie_year', 0)) if pd.notna(r.get('movie_year')) else None)
-            st.markdown(f"**{r['title']}** ({int(r['movie_year']) if pd.notna(r['movie_year']) else 'N/A'})")
+            year = int(r.get('movie_year')) if pd.notna(r.get('movie_year')) else None
+            poster, overview = fetch_poster(str(r['title']), year)
+            st.markdown(f"**{r['title']}** ({year if year else 'N/A'})")
             if poster:
                 st.image(poster, use_column_width=True)
             else:
@@ -343,11 +367,10 @@ with tabs[0]:
 
         st.subheader("추천 결과 (상위 K)")
         st.dataframe(rec[['title','movie_year','movie_decade','genre1','genre2','genre3',
-                          'score','score_adj','why']])
+                          'score','score_adj','why']]])
 
-        # 포스터 카드
-        show_posters_opt = st.checkbox("포스터/줄거리 카드 보기 (OMDb/TMDB 키 필요)", value=False)
-        if show_posters_opt:
+        # 포스터 카드 (키 없으면 자동 생략)
+        if st.checkbox("포스터/줄거리 카드 보기 (OMDb/TMDB 키 필요)", value=False):
             show_posters(rec, max_cards=8)
 
 # ---------- 탭 2: 평가 대시보드 ----------
@@ -362,19 +385,25 @@ with tabs[1]:
             eval_df, mean_auc, mean_p = evaluate_model_sample(users_sample, k=k, max_items_per_user=300)
         c1, c2 = st.columns(2)
         with c1:
-            st.metric("평균 AUC", f"{mean_auc:.4f}")
-            auc_chart = alt.Chart(eval_df.dropna()).mark_bar().encode(
-                x=alt.X('auc:Q', bin=alt.Bin(maxbins=20), title='AUC'),
-                y=alt.Y('count()', title='사용자 수')
-            ).properties(height=250)
-            st.altair_chart(auc_chart, use_container_width=True)
+            st.metric("평균 AUC", f"{mean_auc:.4f}" if pd.notna(mean_auc) else "NaN")
+            if not eval_df.dropna(subset=['auc']).empty:
+                auc_chart = alt.Chart(eval_df.dropna(subset=['auc'])).mark_bar().encode(
+                    x=alt.X('auc:Q', bin=alt.Bin(maxbins=20), title='AUC'),
+                    y=alt.Y('count()', title='사용자 수')
+                ).properties(height=250)
+                st.altair_chart(auc_chart, use_container_width=True)
+            else:
+                st.info("AUC를 계산할 수 있는 사용자가 부족합니다.")
         with c2:
-            st.metric(f"평균 Precision@{k}", f"{mean_p:.4f}")
-            p_chart = alt.Chart(eval_df.dropna()).mark_bar().encode(
-                x=alt.X('precision_at_k:Q', bin=alt.Bin(maxbins=20), title=f'Precision@{k}'),
-                y=alt.Y('count()', title='사용자 수')
-            ).properties(height=250)
-            st.altair_chart(p_chart, use_container_width=True)
+            st.metric(f"평균 Precision@{k}", f"{mean_p:.4f}" if pd.notna(mean_p) else "NaN")
+            if not eval_df.dropna(subset=['precision_at_k']).empty:
+                p_chart = alt.Chart(eval_df.dropna(subset=['precision_at_k'])).mark_bar().encode(
+                    x=alt.X('precision_at_k:Q', bin=alt.Bin(maxbins=20), title=f'Precision@{k}'),
+                    y=alt.Y('count()', title='사용자 수')
+                ).properties(height=250)
+                st.altair_chart(p_chart, use_container_width=True)
+            else:
+                st.info("Precision@K를 계산할 수 있는 사용자가 부족합니다.")
         st.subheader("개별 사용자 평가 결과")
         st.dataframe(eval_df)
 
@@ -395,7 +424,7 @@ with tabs[2]:
 
     if st.button("비교 실행"):
         def topk_rec(uid):
-            r_raw = get_recom(uid, user_non_seen, users_df, movies_df, ry=2000, r_month=1, model=model, encs=encs, topk=200)
+            r_raw = get_recom(uid, user_non_seen, users_df, movies_df, r_year=2000, r_month=1, model=model, encs=encs, topk=200)
             r = rerank_by_recency(r_raw, alpha=0.15, recent_year=2000)
             r = diversify_by_genre(r, topk=comp_topk, lam=0.10)
             return r
@@ -404,9 +433,9 @@ with tabs[2]:
 
         # 장르 탑5
         def top_genres(df):
-            s = pd.Series(pd.concat([df['genre1'], df['genre2'], df['genre3']])).replace({None:'None'}).value_counts()
+            s = pd.Series(pd.concat([df['genre1'], df['genre2'], df['genre3']])).replace({None:'None'})
             s = s[s.index.notna()]
-            s = s[s.index!='None']
+            s = s[s!='None'].value_counts()
             return s.head(5).reset_index(names=['genre', 'count'])
         g1, g2 = top_genres(r1), top_genres(r2)
         g1['user']='A'; g2['user']='B'
@@ -441,3 +470,15 @@ with tabs[2]:
         st.subheader("B 사용자 추천 Top-K 미리보기")
         st.dataframe(r2[['title','movie_year','movie_decade','genre1','genre2','genre3','score']])
 
+# ---------- 탭 4: 설정/도움말 ----------
+with tabs[3]:
+    st.subheader("포스터 API 키 설정 (선택)")
+    st.markdown("""
+- **OMDb**: `OMDB_API_KEY`  
+- **TMDB**: `TMDB_API_KEY`  
+
+`.streamlit/secrets.toml` 또는 환경변수로 설정하면 포스터/줄거리가 표시됩니다.
+```toml
+OMDB_API_KEY = "your_omdb_key"
+TMDB_API_KEY = "your_tmdb_key"
+""" )
