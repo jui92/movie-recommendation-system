@@ -367,7 +367,7 @@ with tabs[0]:
 
         st.subheader("추천 결과 (상위 K)")
         st.dataframe(rec[['title','movie_year','movie_decade','genre1','genre2','genre3',
-                          'score','score_adj','why']]])
+                          'score','score_adj','why']])
 
         # 포스터 카드 (키 없으면 자동 생략)
         if st.checkbox("포스터/줄거리 카드 보기 (OMDb/TMDB 키 필요)", value=False):
