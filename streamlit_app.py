@@ -1,16 +1,11 @@
 # streamlit_app.py
-# ---------------------------------------------------------
-# MovieLens 1M + AutoInt 추천 데모 (Streamlit)
-# 구조: data/ml-1m | artifacts | model
-# ---------------------------------------------------------
 from pathlib import Path
 import pickle
 import numpy as np
 import pandas as pd
 import streamlit as st
 
-# ===== (옵션) 디버그 토글 =====
-DEBUG = False  # 문제가 있을 때 True 로 바꾸면 환경/경로/오류를 화면에 표시
+DEBUG = False 
 
 # ===== 필수 경로 =====
 DATA_DIR  = Path("data/ml-1m")
@@ -22,20 +17,25 @@ MOVIES_FILE  = DATA_DIR / "movies.dat"
 RATINGS_FILE = DATA_DIR / "ratings.dat"
 FIELD_DIMS_PATH = ART_DIR  / "field_dims.npy"
 ENCODER_PATH    = ART_DIR  / "label_encoders.pkl"
-WEIGHTS_PATH    = MODEL_DIR/ "autoInt_model.weights.h5"   # Keras 규칙: .weights.h5
+WEIGHTS_PATH    = MODEL_DIR/ "autoInt_model.weights.h5"   # 반드시 .weights.h5
 
 # ===== Streamlit page config =====
 st.set_page_config(page_title="🎬 MovieLens AutoInt Recommender", layout="wide")
 
 # ===== 빠른 자체 점검 =====
-missing = [p for p in [USERS_FILE, MOVIES_FILE, RATINGS_FILE, FIELD_DIMS_PATH, ENCODER_PATH, WEIGHTS_PATH] if not p.exists()]
+missing = [p for p in [FIELD_DIMS_PATH, ENCODER_PATH, WEIGHTS_PATH] if not p.exists()]
 if DEBUG:
     st.sidebar.title("🛠 DEBUG")
     st.sidebar.write("CWD:", Path(".").resolve())
-    st.sidebar.write("Files at root:", sorted([p.name for p in Path(".").iterdir()]))
+    try:
+        import sys
+        st.sidebar.write("Python:", sys.version)
+    except Exception:
+        pass
+    st.sidebar.write("Root entries:", sorted([p.name for p in Path(".").iterdir()]))
 
 if missing:
-    st.error("❌ 다음 파일이 필요합니다:\n" + "\n".join(str(p) for p in missing))
+    st.error("❌ 다음 파일이 필요합니다(학습 후 생성됨):\n" + "\n".join(str(p) for p in missing))
     st.stop()
 
 # ===== 안전한 TensorFlow import =====
@@ -44,7 +44,7 @@ try:
     from tensorflow import keras
     from tensorflow.keras import layers
 except Exception as e:
-    st.error("TensorFlow 임포트에 실패했습니다. requirements.txt / runtime.txt 조합을 확인하세요.")
+    st.error("TensorFlow 임포트 실패. requirements/runtime을 확인하세요.")
     st.exception(e)
     st.stop()
 
@@ -54,19 +54,22 @@ if DEBUG:
 # ===== 데이터 로딩 (캐시) =====
 @st.cache_data(show_spinner=False)
 def load_tables():
+    # latin-1 인코딩으로 명시 (UnicodeDecodeError 방지)
     users = pd.read_csv(
         USERS_FILE, sep="::", engine="python",
-        names=["user_id","gender","age","occupation","zip"]
+        names=["user_id","gender","age","occupation","zip"],
+        encoding="latin-1"
     )
     movies = pd.read_csv(
         MOVIES_FILE, sep="::", engine="python",
-        names=["movie_id","title","genres"]
+        names=["movie_id","title","genres"],
+        encoding="latin-1"
     )
     ratings = pd.read_csv(
         RATINGS_FILE, sep="::", engine="python",
-        names=["user_id","movie_id","rating","timestamp"]
+        names=["user_id","movie_id","rating","timestamp"],
+        encoding="latin-1"
     )
-    # 파생
     ratings["label"] = (ratings["rating"] >= 4).astype(int)
     ratings["ts"] = pd.to_datetime(ratings["timestamp"], unit="s")
     ratings["rating_year"]  = ratings["ts"].dt.year
@@ -77,15 +80,16 @@ def load_tables():
 # ===== 아티팩트 & 모델 로딩 (캐시) =====
 @st.cache_resource(show_spinner=False)
 def load_artifacts_and_model():
-    # artifacts
+    # artifacts 로드
     try:
         field_dims = np.load(FIELD_DIMS_PATH)
         with open(ENCODER_PATH, "rb") as f:
             enc = pickle.load(f)
+        # enc는 {"cat_cols": [...], "label_encoders": {...}} 형태여야 함
         cat_cols       = enc["cat_cols"]
         label_encoders = enc["label_encoders"]
     except Exception as e:
-        st.error("아티팩트 로드 실패(artifacts/*.npy, *.pkl). 파일을 확인하세요.")
+        st.error("아티팩트 로드 실패(artifacts/*.npy, *.pkl). 파일 내부 구조를 확인하세요.")
         raise
 
     # AutoInt 모델 골격 (학습과 동일해야 함)
@@ -97,6 +101,7 @@ def load_artifacts_and_model():
     mlp_units   = [128, 64]
 
     inp = keras.Input(shape=(num_fields,), dtype="int32")
+
     embeds = []
     for i, dim in enumerate(field_dims):
         vi = layers.Lambda(lambda x, idx=i: tf.gather(x, indices=idx, axis=1))(inp)  # (B,)
@@ -212,9 +217,6 @@ else:
 # ===== (옵션) 간단 자가 점검 =====
 with st.expander("✅ Self-check (필요 시 열기)"):
     checks = {
-        "users.dat": USERS_FILE.exists(),
-        "movies.dat": MOVIES_FILE.exists(),
-        "ratings.dat": RATINGS_FILE.exists(),
         "field_dims.npy": FIELD_DIMS_PATH.exists(),
         "label_encoders.pkl": ENCODER_PATH.exists(),
         "weights (.weights.h5)": WEIGHTS_PATH.exists(),
