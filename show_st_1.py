@@ -1,5 +1,3 @@
-
-# show_st.py (streamlined: 추천 + 평가 대시보드)
 import os, joblib
 import numpy as np
 import pandas as pd
@@ -36,9 +34,9 @@ def load_data(weights_version: str = os.getenv("WEIGHTS_VERSION", "v1")):
         raise FileNotFoundError("data/ 또는 model/ 폴더를 찾지 못했습니다.")
 
     field_dims = np.load(data_dir/'field_dims.npy')
-    ratings_df = pd.read_csv(data_dir/'ratings_prepro.csv')
-    movies_df  = pd.read_csv(data_dir/'movies_prepro.csv')
-    users_df   = pd.read_csv(data_dir/'users_prepro.csv')
+    ratings_df = pd.read_csv(data_dir/'ml-1m'/'ratings_prepro.csv')
+    movies_df  = pd.read_csv(data_dir/'ml-1m'/'movies_prepro.csv')
+    users_df   = pd.read_csv(data_dir/'ml-1m'/'users_prepro.csv')
 
     model = AutoIntModel(field_dims=field_dims, embed_dim=32, 
                          att_layer_num=4, att_head_num=4, att_res=True,
@@ -46,9 +44,7 @@ def load_data(weights_version: str = os.getenv("WEIGHTS_VERSION", "v1")):
 
     _ = model(np.zeros((1, len(field_dims)), dtype="int64"))
 
-    weight_files = [model_dir/'autoInt_model.weights.h5',    
-                    model_dir/'autoInt_model_weights.h5',
-                    model_dir/'autoInt_model.h5']
+    weight_files = [model_dir/'autoInt_model.weights.h5', model_dir/'autoInt_model_weights.h5']
     loaded = False
     last_err = None
     for wf in weight_files:
