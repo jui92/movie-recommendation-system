@@ -74,8 +74,14 @@ def get_recom(user_id, user_non_seen_dict, users_df, movies_df, r_year, r_month,
     user_id_list = [user_id for _ in range(len(user_non_seen_movie))]
     r_decade = str(r_year - (r_year % 10)) + 's'
 
-    user_non_seen_movie = pd.merge(pd.DataFrame({'movie_id': user_non_seen_movie}), movies_df, on='movie_id', how='left')
-    user_info = pd.merge(pd.DataFrame({'user_id': user_id_list}), users_df, on='user_id', how='left')
+    user_non_seen_movie = pd.merge(
+        pd.DataFrame({'movie_id': user_non_seen_movie}),
+        movies_df, on='movie_id', how='left'
+    )
+    user_info = pd.merge(
+        pd.DataFrame({'user_id': user_id_list}),
+        users_df, on='user_id', how='left'
+    )
     user_info['rating_year'] = r_year
     user_info['rating_month'] = r_month
     user_info['rating_decade'] = r_decade
@@ -84,28 +90,95 @@ def get_recom(user_id, user_non_seen_dict, users_df, movies_df, r_year, r_month,
                     'rating_month', 'rating_decade', 'genre1', 'genre2', 'genre3',
                     'gender', 'age', 'occupation', 'zip']
 
-    merge_data = pd.concat([user_non_seen_movie.reset_index(drop=True), user_info.reset_index(drop=True)], axis=1)
+    merge_data = pd.concat(
+        [user_non_seen_movie.reset_index(drop=True),
+         user_info.reset_index(drop=True)],
+        axis=1
+    )
+
     merge_data = merge_data[[c for c in feature_cols if c in merge_data.columns]]
-    merge_data.fillna('no', inplace=True)
-    merge_data = _encode_with_label_encoders(merge_data, label_encoders)
+    merge_data = merge_data.fillna('no')
 
-    top = predict_model(model, merge_data, topk=topk)
-    encoded_top_ids = [t[0] for t in top]
-    scores = {t[0]: t[1] for t in top}
+    # === 인코딩: 라벨인코더 classes_ 타입과 입력 타입을 일치시킴 ===
+    def _safe_transform(col):
+        if col in label_encoders:
+            le = label_encoders[col]
+            # 라벨 클래스 dtype 확인
+            cls = getattr(le, 'classes_', None)
+            if cls is not None:
+                if cls.dtype.kind in {'U','S','O'}:   # 문자열 기반 인코더
+                    merge_data[col] = merge_data[col].astype(str)
+                else:                                  # 숫자 기반 인코더
+                    # 숫자형으로 깔끔히
+                    merge_data[col] = pd.to_numeric(merge_data[col], errors='coerce').fillna(0).astype(int)
+            # 변환 시도
+            try:
+                merge_data[col] = le.transform(merge_data[col])
+            except Exception:
+                # 미지 클래스는 최빈/첫번째 클래스로 폴백
+                if cls is not None and len(cls) > 0:
+                    fallback = cls[0]
+                    merge_data[col] = merge_data[col].map(lambda x: x if x in cls else fallback)
+                    merge_data[col] = le.transform(merge_data[col])
+                else:
+                    merge_data[col] = 0
+        return
 
+    for c in feature_cols:
+        _safe_transform(c)
+
+    # === 예측 ===
+    top = predict_model(model, merge_data, topk=topk)  # [(encoded_movie_id, score), ...]
+    if len(top) == 0:
+        return pd.DataFrame(columns=list(movies_df.columns) + ['score'])
+
+    enc_movie_ids = np.array([t[0] for t in top])
+    scores_map = {int(t[0]): float(t[1]) for t in top}
+
+    # === 역변환 & 조인 dtype 정렬 ===
     if 'movie_id' in label_encoders:
-        origin_m_id = label_encoders['movie_id'].inverse_transform(np.array(encoded_top_ids))
+        le_m = label_encoders['movie_id']
+        cls = le_m.classes_
+        if cls.dtype.kind in {'U','S','O'}:
+            # 인코더가 문자열 클래스인 경우: 역변환 → 문자열
+            origin_movie_ids = le_m.inverse_transform(enc_movie_ids)
+            # movies_df key도 문자열로 맞춤
+            movies_key = movies_df['movie_id'].astype(str)
+        else:
+            # 인코더가 숫자 클래스인 경우: 역변환 → 숫자
+            origin_movie_ids = le_m.inverse_transform(enc_movie_ids)
+            movies_key = pd.to_numeric(movies_df['movie_id'], errors='coerce').fillna(-1).astype(int)
     else:
-        origin_m_id = np.array(encoded_top_ids)
+        # 인코더 없음: 인코딩된 값 자체가 원본과 같을 가능성 낮음 → 안전하게 공집합 방지 로깅
+        origin_movie_ids = enc_movie_ids
+        movies_key = movies_df['movie_id']
 
-    out = movies_df[movies_df['movie_id'].isin(origin_m_id)].copy()
+    # 필터링
+    mask = movies_key.isin(pd.Series(origin_movie_ids))
+    out = movies_df.loc[mask].copy()
+
+    # 점수 매핑: out의 movie_id도 인코딩해서 점수 붙임 (dtype 맞춘 뒤 변환)
     if 'movie_id' in label_encoders:
-        re_enc = label_encoders['movie_id'].transform(out['movie_id'])
-        out['score'] = [scores.get(int(e), np.nan) for e in re_enc]
+        le_m = label_encoders['movie_id']
+        # out 키를 인코더 입력 dtype에 맞춰 변환
+        if le_m.classes_.dtype.kind in {'U','S','O'}:
+            out_key_for_score = out['movie_id'].astype(str)
+        else:
+            out_key_for_score = pd.to_numeric(out['movie_id'], errors='coerce').fillna(-1).astype(int)
+        try:
+            out_enc = le_m.transform(out_key_for_score)
+        except Exception:
+            # 역변환이 잘 되었으면 여기서도 보통 안전하지만, 혹시 모를 에러에 대비
+            out['score'] = np.nan
+        else:
+            out['score'] = [scores_map.get(int(e), np.nan) for e in out_enc]
     else:
         out['score'] = np.nan
+
+    # 최종 정렬
     out = out.sort_values('score', ascending=False)
     return out
+
 
 users_df, movies_df, ratings_df, model, label_encoders = load_data()
 user_seen_movies = get_user_seen_movies(ratings_df)
