@@ -40,18 +40,17 @@ def load_csvs():
     return movies, ratings, users
 
 def build_encoders(df):
-    label_encoders = {}
+    encs = {}
     for c in FEATURE_COLS:
         le = LabelEncoder()
         vals = df[c].fillna('no')
-        # 숫자처럼 보이면 숫자로 고정 → 인코더 클래스 타입을 안정화
         if c in ['user_id','movie_id','movie_year','rating_year','rating_month','age','occupation','zip']:
-            vals = pd.to_numeric(vals, errors='coerce').fillna(0).astype(int).astype(str)
+            vals = pd.to_numeric(vals, errors='coerce').fillna(0).astype(int).astype(str)  # 숫자형을 문자열 클래스로 고정
         else:
             vals = vals.astype(str)
         le.fit(vals)
-        label_encoders[c] = le
-    return label_encoders
+        encs[c] = le
+    return encs
 
 def transform(df, encs):
     out = df.copy()
@@ -61,17 +60,15 @@ def transform(df, encs):
             v = pd.to_numeric(v, errors='coerce').fillna(0).astype(int).astype(str)
         else:
             v = v.astype(str)
-        # OOV는 첫 클래스 폴백
         v = v.where(v.isin(le.classes_), le.classes_[0])
         out[c] = le.transform(v)
     return out
 
 def precision_at_k(model, df_enc, k=10):
-    # 간단 평가: 사용자별 상위 k 중 실제 rating>=4 비율
     if 'rating' not in df_enc: return np.nan
     users = df_enc['user_id'].unique()
     precs = []
-    for u in users[:200]:  # 과부하 방지용 최대 200명
+    for u in users[:200]:  # 속도 보호
         tmp = df_enc[df_enc['user_id']==u]
         X = tmp[FEATURE_COLS].values
         y = (tmp['rating']>=4).astype(int).values
@@ -96,7 +93,6 @@ if __name__ == "__main__":
 
     y = (df_enc['rating'] >= 4).astype('int32').values if 'rating' in df_enc else np.ones(len(df_enc), dtype='int32')
     X = df_enc[FEATURE_COLS].astype('int32').values
-
     X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=0.1, random_state=42, stratify=y)
 
     print(">> Building model...")
@@ -108,21 +104,19 @@ if __name__ == "__main__":
                   metrics=[tf.keras.metrics.AUC(name='auc'), tf.keras.metrics.BinaryAccuracy(name='acc')])
 
     print(">> Training...")
-    hist = model.fit(X_tr, y_tr, validation_data=(X_va, y_va), epochs=5, batch_size=2048, verbose=1)
+    hist = model.fit(X_tr, y_tr, validation_data=(X_va, y_va),
+                     epochs=5, batch_size=2048, verbose=1)
     print({k: float(v[-1]) for k, v in hist.history.items()})
 
-    # AUC
     y_pred = model(X_va, training=False).numpy().reshape(-1)
     auc = roc_auc_score(y_va, y_pred)
     print(f">> Val AUC: {auc:.4f}")
 
-    # Precision@10 (간단 버전)
     va_df = pd.DataFrame(X_va, columns=FEATURE_COLS)
     va_df['rating'] = y_va
     p10 = precision_at_k(model, va_df, k=10)
     print(f">> Precision@10 (approx): {p10:.4f}")
 
     print(">> Saving weights...")
-    # TF 2.16+ 규칙: .weights.h5
-    model.save_weights(MODEL_DIR/'autoInt_model.weights.h5')
+    model.save_weights(MODEL_DIR/'autoInt_model.weights.h5')  # TF>=2.16 규칙
     print("Saved:", (MODEL_DIR/'autoInt_model.weights.h5').as_posix())

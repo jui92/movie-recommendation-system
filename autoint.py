@@ -8,8 +8,11 @@ class FeaturesEmbedding(layers.Layer):
     def __init__(self, field_dims: List[int], embed_dim: int, **kwargs):
         super().__init__(**kwargs)
         self.emb_layers = [
-            layers.Embedding(input_dim=int(fd), output_dim=int(embed_dim),
-                             embeddings_initializer="glorot_uniform")
+            layers.Embedding(
+                input_dim=int(fd),
+                output_dim=int(embed_dim),
+                embeddings_initializer="glorot_uniform"
+            )
             for fd in field_dims
         ]
 
@@ -24,9 +27,13 @@ class FeaturesEmbedding(layers.Layer):
 class MultiHeadSelfInteraction(layers.Layer):
     def __init__(self, embed_dim: int, num_heads: int, att_res: bool = True, **kwargs):
         super().__init__(**kwargs)
-        self.mha = layers.MultiHeadAttention(num_heads=num_heads, key_dim=embed_dim, output_shape=embed_dim)
-        self.ffn = tf.keras.Sequential([layers.Dense(embed_dim * 2, activation="relu"),
-                                        layers.Dense(embed_dim)])
+        self.mha = layers.MultiHeadAttention(
+            num_heads=num_heads, key_dim=embed_dim, output_shape=embed_dim
+        )
+        self.ffn = tf.keras.Sequential([
+            layers.Dense(embed_dim * 2, activation="relu"),
+            layers.Dense(embed_dim)
+        ])
         self.norm1 = layers.LayerNormalization(epsilon=1e-6)
         self.norm2 = layers.LayerNormalization(epsilon=1e-6)
         self.att_res = att_res
@@ -38,22 +45,35 @@ class MultiHeadSelfInteraction(layers.Layer):
         return self.norm2(x + ffn_out)
 
 class AutoIntModel(Model):
-    def __init__(self, field_dims: np.ndarray, embed_dim=16, att_layer_num=3, att_head_num=2,
-                 att_res=True, dnn_hidden_units=None, dnn_dropout=0.4,
-                 l2_reg_dnn=0.0, dnn_use_bn=False, **kwargs):
+    def __init__(self,
+                 field_dims: np.ndarray,
+                 embed_dim=16,
+                 att_layer_num=3,
+                 att_head_num=2,
+                 att_res=True,
+                 dnn_hidden_units=None,
+                 dnn_dropout=0.4,
+                 l2_reg_dnn=0.0,
+                 dnn_use_bn=False,
+                 **kwargs):
         super().__init__(**kwargs)
         field_dims = [int(x) for x in list(field_dims)]
         self.embedding = FeaturesEmbedding(field_dims, embed_dim, name="features_embedding")
-        self.att_blocks = [MultiHeadSelfInteraction(embed_dim, att_head_num, att_res, name=f"att_{i}")
-                           for i in range(att_layer_num)]
+        self.att_blocks = [
+            MultiHeadSelfInteraction(embed_dim, att_head_num, att_res, name=f"att_{i}")
+            for i in range(att_layer_num)
+        ]
         self.global_pool = layers.GlobalAveragePooling1D()
-        if dnn_hidden_units is None: dnn_hidden_units = [64, 32]
+        if dnn_hidden_units is None:
+            dnn_hidden_units = [64, 32]
         dnn_layers = []
         for i, u in enumerate(dnn_hidden_units):
             dnn_layers.append(layers.Dense(u, kernel_regularizer=tf.keras.regularizers.l2(l2_reg_dnn)))
-            if dnn_use_bn: dnn_layers.append(layers.BatchNormalization())
+            if dnn_use_bn:
+                dnn_layers.append(layers.BatchNormalization())
             dnn_layers.append(layers.ReLU())
-            if dnn_dropout: dnn_layers.append(layers.Dropout(dnn_dropout))
+            if dnn_dropout:
+                dnn_layers.append(layers.Dropout(dnn_dropout))
         self.dnn = tf.keras.Sequential(dnn_layers, name="dnn_head")
         self.logit = layers.Dense(1, activation=None, name="logit")
 
