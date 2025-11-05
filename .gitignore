@@ -1,0 +1,13 @@
+﻿# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# 대용량 데이터(푸시 금지)
+data/ml-1m/movielens_rcmm_v1.csv
+data/ml-1m/movielens_rcmm_v2.csv
+*.zip
+*.npz
+
+# (선택) 중첩 레포 폴더 차단
+movie-recommendation-system/
