@@ -1,58 +1,72 @@
-import os
+# streamlit_app.py
+# ---------------------------------------------------------
+# MovieLens 1M + AutoInt 추천 데모 (Streamlit)
+# 구조: data/ml-1m | artifacts | model
+# ---------------------------------------------------------
 from pathlib import Path
 import pickle
 import numpy as np
 import pandas as pd
 import streamlit as st
 
-# -----------------------------
-# 0) TensorFlow 가드
-# -----------------------------
+# ===== (옵션) 디버그 토글 =====
+DEBUG = False  # 문제가 있을 때 True 로 바꾸면 환경/경로/오류를 화면에 표시
+
+# ===== 필수 경로 =====
+DATA_DIR  = Path("data/ml-1m")
+ART_DIR   = Path("artifacts")
+MODEL_DIR = Path("model")
+
+USERS_FILE   = DATA_DIR / "users.dat"
+MOVIES_FILE  = DATA_DIR / "movies.dat"
+RATINGS_FILE = DATA_DIR / "ratings.dat"
+FIELD_DIMS_PATH = ART_DIR  / "field_dims.npy"
+ENCODER_PATH    = ART_DIR  / "label_encoders.pkl"
+WEIGHTS_PATH    = MODEL_DIR/ "autoInt_model.weights.h5"   # Keras 규칙: .weights.h5
+
+# ===== Streamlit page config =====
+st.set_page_config(page_title="🎬 MovieLens AutoInt Recommender", layout="wide")
+
+# ===== 빠른 자체 점검 =====
+missing = [p for p in [USERS_FILE, MOVIES_FILE, RATINGS_FILE, FIELD_DIMS_PATH, ENCODER_PATH, WEIGHTS_PATH] if not p.exists()]
+if DEBUG:
+    st.sidebar.title("🛠 DEBUG")
+    st.sidebar.write("CWD:", Path(".").resolve())
+    st.sidebar.write("Files at root:", sorted([p.name for p in Path(".").iterdir()]))
+
+if missing:
+    st.error("❌ 다음 파일이 필요합니다:\n" + "\n".join(str(p) for p in missing))
+    st.stop()
+
+# ===== 안전한 TensorFlow import =====
 try:
     import tensorflow as tf
     from tensorflow import keras
     from tensorflow.keras import layers
 except Exception as e:
-    st.error(
-        "TensorFlow를 불러오지 못했습니다.\n"
-        "requirements.txt와 runtime.txt를 확인하세요.\n\n"
-        f"[원인] {e}"
-    )
+    st.error("TensorFlow 임포트에 실패했습니다. requirements.txt / runtime.txt 조합을 확인하세요.")
+    st.exception(e)
     st.stop()
 
-st.set_page_config(page_title="MovieLens AutoInt Recommender", layout="wide")
+if DEBUG:
+    st.sidebar.write("TensorFlow:", tf.__version__)
 
-# -----------------------------
-# 1) 경로/필수 파일 체크
-# -----------------------------
-DATA_DIR = Path("data/ml-1m")
-ART_DIR  = Path("artifacts")
-MODEL_W  = Path("model/autoInt_model.weights.h5")  # ← 반드시 .weights.h5
-
-required_files = [
-    DATA_DIR / "users.dat",
-    DATA_DIR / "movies.dat",
-    DATA_DIR / "ratings.dat",
-    ART_DIR / "field_dims.npy",
-    ART_DIR / "label_encoders.pkl",
-    MODEL_W,
-]
-missing = [str(p) for p in required_files if not p.exists()]
-if missing:
-    st.error("필수 파일이 없습니다. 레포지토리에 포함해 주세요:\n\n" + "\n".join(missing))
-    st.stop()
-
-# -----------------------------
-# 2) 데이터 로딩 (캐시)
-# -----------------------------
+# ===== 데이터 로딩 (캐시) =====
 @st.cache_data(show_spinner=False)
-def load_small_tables():
-    users = pd.read_csv(DATA_DIR / "users.dat", sep="::", engine="python",
-                        names=["user_id","gender","age","occupation","zip"])
-    movies = pd.read_csv(DATA_DIR / "movies.dat", sep="::", engine="python",
-                         names=["movie_id","title","genres"])
-    ratings = pd.read_csv(DATA_DIR / "ratings.dat", sep="::", engine="python",
-                          names=["user_id","movie_id","rating","timestamp"])
+def load_tables():
+    users = pd.read_csv(
+        USERS_FILE, sep="::", engine="python",
+        names=["user_id","gender","age","occupation","zip"]
+    )
+    movies = pd.read_csv(
+        MOVIES_FILE, sep="::", engine="python",
+        names=["movie_id","title","genres"]
+    )
+    ratings = pd.read_csv(
+        RATINGS_FILE, sep="::", engine="python",
+        names=["user_id","movie_id","rating","timestamp"]
+    )
+    # 파생
     ratings["label"] = (ratings["rating"] >= 4).astype(int)
     ratings["ts"] = pd.to_datetime(ratings["timestamp"], unit="s")
     ratings["rating_year"]  = ratings["ts"].dt.year
@@ -60,33 +74,34 @@ def load_small_tables():
     movies["main_genre"] = movies["genres"].str.split("|").str[0]
     return users, movies, ratings
 
+# ===== 아티팩트 & 모델 로딩 (캐시) =====
 @st.cache_resource(show_spinner=False)
 def load_artifacts_and_model():
-    # ---- artifacts
+    # artifacts
     try:
-        field_dims = np.load(ART_DIR / "field_dims.npy")
-        with open(ART_DIR / "label_encoders.pkl", "rb") as f:
-            enc_obj = pickle.load(f)
-        cat_cols       = enc_obj["cat_cols"]
-        label_encoders = enc_obj["label_encoders"]
+        field_dims = np.load(FIELD_DIMS_PATH)
+        with open(ENCODER_PATH, "rb") as f:
+            enc = pickle.load(f)
+        cat_cols       = enc["cat_cols"]
+        label_encoders = enc["label_encoders"]
     except Exception as e:
-        st.error("아티팩트 로드 실패(field_dims / label_encoders). 파일을 확인해 주세요.\n\n" + str(e))
-        st.stop()
+        st.error("아티팩트 로드 실패(artifacts/*.npy, *.pkl). 파일을 확인하세요.")
+        raise
 
-    # ---- AutoInt 구조 (학습과 동일해야 함)
+    # AutoInt 모델 골격 (학습과 동일해야 함)
     num_fields  = len(cat_cols)
     embed_dim   = 32
     num_heads   = 4
     attn_layers = 2
-    dropout_rate = 0.2
+    dropout_rate= 0.2
     mlp_units   = [128, 64]
 
     inp = keras.Input(shape=(num_fields,), dtype="int32")
     embeds = []
     for i, dim in enumerate(field_dims):
-        vi = layers.Lambda(lambda x: tf.gather(x, indices=i, axis=1))(inp)  # (B,)
+        vi = layers.Lambda(lambda x, idx=i: tf.gather(x, indices=idx, axis=1))(inp)  # (B,)
         vi = layers.Reshape((1,))(vi)
-        ei = layers.Embedding(input_dim=int(dim), output_dim=embed_dim)(vi) # (B,1,E)
+        ei = layers.Embedding(input_dim=int(dim), output_dim=embed_dim)(vi)          # (B,1,E)
         embeds.append(ei)
     E = layers.Concatenate(axis=1)(embeds)  # (B,F,E)
 
@@ -104,52 +119,52 @@ def load_artifacts_and_model():
 
     model = keras.Model(inputs=inp, outputs=out)
     model.compile(optimizer="adam", loss="binary_crossentropy")
-    # build & load weights
+
+    # build 후 가중치 로드
     _ = model.predict(np.zeros((1, num_fields), dtype=np.int32), verbose=0)
     try:
-        model.load_weights(str(MODEL_W))
+        model.load_weights(str(WEIGHTS_PATH))
     except Exception as e:
-        st.error("가중치 로드 실패(model/autoInt_model.weights.h5). 파일/구조를 확인하세요.\n\n" + str(e))
-        st.stop()
+        st.error("가중치 로드 실패(model/autoInt_model.weights.h5). 확장자/경로/모델구조를 확인하세요.")
+        raise
+
     return cat_cols, label_encoders, field_dims, model
 
-users, movies, ratings = load_small_tables()
-cat_cols, label_encoders, field_dims, model = load_artifacts_and_model()
-
-# -----------------------------
-# 3) 유틸
-# -----------------------------
-def map_single(col, val):
+# ===== 유틸 =====
+def map_single(label_encoders, col, val):
     m = label_encoders[col]
     return m.get(str(val), 0)
 
-def recommend_for_user(original_user_id: int, topn: int = 10):
-    """유저가 보지 않은 영화에 대해 점수 예측 → TopN"""
-    urow = users[users["user_id"]==original_user_id]
-    if len(urow)==0:
+def recommend_for_user(users, movies, ratings, cat_cols, label_encoders, model, user_id: int, topn: int = 10):
+    # 사용자 특성
+    u = users[users["user_id"] == user_id]
+    if len(u) == 0:
         g, a, o, z = "M", 25, 0, "00000"
     else:
-        g, a, o, z = urow.iloc[0][["gender","age","occupation","zip"]]
+        g, a, o, z = u.iloc[0][["gender","age","occupation","zip"]]
 
-    seen = set(ratings.loc[ratings["user_id"]==original_user_id, "movie_id"].tolist())
+    # 이미 본 영화 제외
+    seen = set(ratings.loc[ratings["user_id"]==user_id, "movie_id"].tolist())
     cand = movies[~movies["movie_id"].isin(seen)].copy()
     if cand.empty:
         return pd.DataFrame(columns=["movie_id","title","genres","score"])
 
     cand["main_genre"] = cand["genres"].str.split("|").str[0]
 
+    # 인덱싱
     mg_idx = cand["main_genre"].astype(str).map(label_encoders["main_genre"]).fillna(0).astype(int).values
     m_idx  = cand["movie_id"].astype(str).map(label_encoders["movie_id"]).fillna(0).astype(int).values
 
-    g_idx = map_single("gender", g)
-    a_idx = map_single("age", a)
-    o_idx = map_single("occupation", o)
-    z_idx = map_single("zip", z)
+    g_idx = map_single(label_encoders, "gender", g)
+    a_idx = map_single(label_encoders, "age", a)
+    o_idx = map_single(label_encoders, "occupation", o)
+    z_idx = map_single(label_encoders, "zip", z)
+    u_idx = map_single(label_encoders, "user_id", user_id)
 
     # 입력 행렬 (학습 cat_cols 순서와 동일해야 함)
     # 기본: ["user_id","movie_id","gender","age","occupation","zip","main_genre"]
     n = len(cand)
-    U = np.full((n,), map_single("user_id", original_user_id), dtype=np.int32)
+    U = np.full((n,), u_idx, dtype=np.int32)
     G = np.full((n,), g_idx, dtype=np.int32)
     A = np.full((n,), a_idx, dtype=np.int32)
     O = np.full((n,), o_idx, dtype=np.int32)
@@ -157,40 +172,51 @@ def recommend_for_user(original_user_id: int, topn: int = 10):
     X = np.stack([U, m_idx, G, A, O, Z, mg_idx], axis=1)
 
     scores = model.predict(X, batch_size=65536, verbose=0).ravel()
-    cand = cand.assign(score=scores)
-    top = cand.sort_values("score", ascending=False).head(topn)
-    return top[["movie_id","title","genres","score"]]
+    out = cand.assign(score=scores).sort_values("score", ascending=False).head(topn)
+    return out[["movie_id","title","genres","score"]]
 
-def get_user_profile(uid: int, k: int = 10):
-    hist = (
-        ratings[ratings["user_id"]==uid]
-        .sort_values("ts", ascending=False).head(k)
-        .merge(movies[["movie_id","title","genres"]], on="movie_id", how="left")
-    )
-    return hist[["user_id","movie_id","rating","ts","title","genres"]]
+# ===== 데이터/모델 로딩 =====
+users, movies, ratings = load_tables()
+cat_cols, label_encoders, field_dims, model = load_artifacts_and_model()
 
-# -----------------------------
-# 4) UI
-# -----------------------------
-st.title("🎬 MovieLens AutoInt 추천 결과")
+# ===== UI =====
+st.title("🎬 MovieLens AutoInt 추천")
+st.caption("데이터: MovieLens 1M | 모델: AutoInt (TensorFlow/Keras)")
 
-col_a, col_b, col_c = st.columns([2,2,1])
-with col_a:
-    st.subheader("사용자 선택")
+left, mid, right = st.columns([2,2,1])
+with left:
     uid = st.selectbox("User ID", options=sorted(users["user_id"].unique().tolist()), index=0)
-with col_b:
+with mid:
     topn = st.slider("추천 개수", 5, 50, 10, 1)
-with col_c:
+with right:
     st.write("")
 
 st.divider()
-st.markdown("#### 사용자 최근 시청 이력")
-st.dataframe(get_user_profile(uid, k=10), use_container_width=True, height=260)
+st.markdown("#### 사용자의 최근 시청 이력(평점 순)")
+hist = (
+    ratings[ratings["user_id"]==uid]
+    .sort_values("ts", ascending=False)
+    .head(10)
+    .merge(movies[["movie_id","title","genres"]], on="movie_id", how="left")
+)
+st.dataframe(hist[["user_id","movie_id","rating","ts","title","genres"]], use_container_width=True, height=260)
 
 if st.button("🔎 추천 결과 보기", type="primary"):
     with st.spinner("추천 계산 중…"):
-        recs = recommend_for_user(int(uid), topn=topn)
+        recs = recommend_for_user(users, movies, ratings, cat_cols, label_encoders, model, int(uid), topn=topn)
     st.markdown("#### 추천 결과")
-    st.dataframe(recs.reset_index(drop=True), use_container_width=True, height=400)
+    st.dataframe(recs.reset_index(drop=True), use_container_width=True, height=420)
 else:
     st.info("상단에서 사용자/추천 개수를 설정하고 버튼을 눌러 주세요.")
+
+# ===== (옵션) 간단 자가 점검 =====
+with st.expander("✅ Self-check (필요 시 열기)"):
+    checks = {
+        "users.dat": USERS_FILE.exists(),
+        "movies.dat": MOVIES_FILE.exists(),
+        "ratings.dat": RATINGS_FILE.exists(),
+        "field_dims.npy": FIELD_DIMS_PATH.exists(),
+        "label_encoders.pkl": ENCODER_PATH.exists(),
+        "weights (.weights.h5)": WEIGHTS_PATH.exists(),
+    }
+    st.write({k: ("OK" if v else "MISSING") for k, v in checks.items()})
