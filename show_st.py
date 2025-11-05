@@ -74,14 +74,8 @@ def get_recom(user_id, user_non_seen_dict, users_df, movies_df, r_year, r_month,
     user_id_list = [user_id for _ in range(len(user_non_seen_movie))]
     r_decade = str(r_year - (r_year % 10)) + 's'
 
-    user_non_seen_movie = pd.merge(
-        pd.DataFrame({'movie_id': user_non_seen_movie}),
-        movies_df, on='movie_id', how='left'
-    )
-    user_info = pd.merge(
-        pd.DataFrame({'user_id': user_id_list}),
-        users_df, on='user_id', how='left'
-    )
+    user_non_seen_movie = pd.merge(pd.DataFrame({'movie_id': user_non_seen_movie}), movies_df, on='movie_id', how='left')
+    user_info = pd.merge(pd.DataFrame({'user_id': user_id_list}), users_df, on='user_id', how='left')
     user_info['rating_year'] = r_year
     user_info['rating_month'] = r_month
     user_info['rating_decade'] = r_decade
@@ -90,11 +84,7 @@ def get_recom(user_id, user_non_seen_dict, users_df, movies_df, r_year, r_month,
                     'rating_month', 'rating_decade', 'genre1', 'genre2', 'genre3',
                     'gender', 'age', 'occupation', 'zip']
 
-    merge_data = pd.concat(
-        [user_non_seen_movie.reset_index(drop=True),
-         user_info.reset_index(drop=True)],
-        axis=1
-    )
+    merge_data = pd.concat([user_non_seen_movie.reset_index(drop=True), user_info.reset_index(drop=True)], axis=1)
 
     merge_data = merge_data[[c for c in feature_cols if c in merge_data.columns]]
     merge_data = merge_data.fillna('no')
@@ -128,7 +118,7 @@ def get_recom(user_id, user_non_seen_dict, users_df, movies_df, r_year, r_month,
         _safe_transform(c)
 
     # === 예측 ===
-    top = predict_model(model, merge_data, topk=topk)  # [(encoded_movie_id, score), ...]
+    top = predict_model(model, merge_data, topk=topk)  
     if len(top) == 0:
         return pd.DataFrame(columns=list(movies_df.columns) + ['score'])
 
@@ -197,6 +187,6 @@ if st.button("추천 결과 보기"):
     st.subheader("사용자가 과거에 선호(평점 4점 이상)한 영화")
     st.dataframe(get_user_past_interactions(user_id, ratings_df, movies_df))
 
-    st.subheader("추천 결과 (상위 20개)")
-    recommendations = get_recom(user_id, user_non_seen_dict, users_df, movies_df, r_year, r_month, model, label_encoders, topk=20)
+    st.subheader("추천 결과")
+    recommendations = get_recom(user_id, user_non_seen_dict, users_df, movies_df, r_year, r_month, model, label_encoders, topk=None)
     st.dataframe(recommendations)
