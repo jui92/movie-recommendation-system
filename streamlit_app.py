@@ -26,15 +26,17 @@ WEIGHTS_PATH    = MODEL_DIR / "autoInt_model.weights.h5"
 st.set_page_config(page_title="🎬 MovieLens AutoInt", layout="wide")
 st.title("🎬 MovieLens 1M AutoInt 추천 시스템")
 
-# ========== TensorFlow Import ==========
+# ========== TensorFlow Import 및 초기화 ==========
+tf_loaded = False
 try:
     import tensorflow as tf
     from tensorflow import keras
     from tensorflow.keras import layers
+    tf_loaded = True
 except Exception as e:
-    st.error("TensorFlow import 실패 — requirements.txt를 확인하세요.")
+    st.error("❌ TensorFlow import 실패 — requirements.txt 및 파이썬 버전을 확인하세요.")
     st.exception(e)
-    st.stop()
+    # st.stop() # TensorFlow 오류 시에도 다른 기능을 테스트할 수 있도록 강제 종료 제거
 
 # ========== 데이터 로드 ==========
 @st.cache_data(show_spinner=False)
@@ -79,6 +81,12 @@ def load_artifacts_and_model():
     try:
         with open(ENCODER_PATH, "rb") as f:
             enc_raw = pickle.load(f)
+    except pickle.UnpicklingError as e:
+        # pickle.UnpicklingError 발생 시, 버전 불일치 가능성을 명확히 안내
+        st.error("❌ label_encoders.pkl 로드 실패: Pickle 오류 발생 (라이브러리 버전 불일치 가능성 높음)")
+        st.warning("경고: 이 오류는 일반적으로 모델을 저장할 때 사용했던 Python/scikit-learn/Pandas 버전과 현재 환경의 버전이 일치하지 않을 때 발생합니다. `requirements.txt` 파일을 확인하세요.")
+        st.exception(e)
+        raise
     except Exception as e:
         st.error("❌ label_encoders.pkl 로드 실패")
         st.exception(e)
@@ -98,6 +106,9 @@ def load_artifacts_and_model():
         cat_cols = list(enc_raw[0]) if isinstance(enc_raw[0], (list, tuple)) else default_cat_cols
         label_encoders = enc_raw[1]
     else:
+        # 최종 ValueError 발생 지점: 버전 불일치 외에 파일 구조 자체가 예상과 다를 때
+        st.error("❌ label_encoders.pkl 구조 해석 불가")
+        st.warning("경고: 파일 내부 구조가 코드가 예상하는 딕셔너리, 튜플, 리스트 형식이 아닙니다. 모델 저장 로직을 확인하세요.")
         raise ValueError("label_encoders.pkl 구조를 해석할 수 없습니다.")
 
     # --- field_dims 보정 ---
@@ -109,8 +120,12 @@ def load_artifacts_and_model():
             st.error("field_dims 재계산 실패")
             st.exception(e)
             raise
-
+    
     # --- 모델 구성 ---
+    if not tf_loaded:
+        st.error("TensorFlow 로드 실패로 모델을 구성할 수 없습니다.")
+        return cat_cols, label_encoders, field_dims, None # 모델 객체 대신 None 반환
+
     num_fields  = len(cat_cols)
     embed_dim   = 32
     num_heads   = 4
@@ -159,6 +174,11 @@ def map_single(label_encoders, col, val):
     return m.get(str(val), 0)
 
 def recommend_for_user(users, movies, ratings, cat_cols, label_encoders, model, user_id: int, topn: int = 10):
+    # 모델 로드 실패 시 추천 로직 실행 방지
+    if model is None:
+        st.error("모델이 로드되지 않아 추천을 진행할 수 없습니다.")
+        return pd.DataFrame(columns=["movie_id","title","genres","score"])
+
     u = users[users["user_id"] == user_id]
     if len(u) == 0:
         g, a, o, z = "M", 25, 0, "00000"
@@ -183,11 +203,16 @@ def recommend_for_user(users, movies, ratings, cat_cols, label_encoders, model, 
 
     n = len(cand)
     U = np.full((n,), u_idx, dtype=np.int32)
+    M = m_idx # movie_id
     G = np.full((n,), g_idx, dtype=np.int32)
     A = np.full((n,), a_idx, dtype=np.int32)
     O = np.full((n,), o_idx, dtype=np.int32)
     Z = np.full((n,), z_idx, dtype=np.int32)
-    X = np.stack([U, m_idx, G, A, O, Z, mg_idx], axis=1)
+    MG = mg_idx # main_genre
+
+    # 주의: X를 cat_cols 순서에 맞게 스택해야 합니다.
+    # default_cat_cols = ["user_id","movie_id","gender","age","occupation","zip","main_genre"]
+    X = np.stack([U, M, G, A, O, Z, MG], axis=1)
 
     scores = model.predict(X, batch_size=65536, verbose=0).ravel()
     out = cand.assign(score=scores).sort_values("score", ascending=False).head(topn)
@@ -195,8 +220,19 @@ def recommend_for_user(users, movies, ratings, cat_cols, label_encoders, model, 
 
 
 # ========== 실행 ==========
-users, movies, ratings = load_tables()
-cat_cols, label_encoders, field_dims, model = load_artifacts_and_model()
+try:
+    users, movies, ratings = load_tables()
+    cat_cols, label_encoders, field_dims, model = load_artifacts_and_model()
+
+    if model is None:
+        st.error("추천 시스템 핵심 모듈(TensorFlow/모델) 로드에 실패했습니다. 위의 오류 메시지를 확인하세요.")
+        st.stop()
+        
+except Exception as e:
+    st.error("초기 데이터 또는 모델 로드 중 심각한 오류가 발생했습니다. 앱을 더 이상 실행할 수 없습니다.")
+    st.exception(e)
+    st.stop()
+
 
 uid = st.selectbox("👤 User ID 선택", sorted(users["user_id"].unique().tolist()))
 topn = st.slider("추천 개수", 5, 50, 10, 1)
