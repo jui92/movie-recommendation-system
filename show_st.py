@@ -187,6 +187,6 @@ if st.button("추천 결과 보기"):
     st.subheader("사용자가 과거에 선호(평점 4점 이상)한 영화")
     st.dataframe(get_user_past_interactions(user_id, ratings_df, movies_df))
 
-    st.subheader("추천 결과")
-    recommendations = get_recom(user_id, user_non_seen_dict, users_df, movies_df, r_year, r_month, model, label_encoders, topk=None)
+    st.subheader("추천 결과 (상위 20개)")
+    recommendations = get_recom(user_id, user_non_seen_dict, users_df, movies_df, r_year, r_month, model, label_encoders, topk=10)
     st.dataframe(recommendations)
