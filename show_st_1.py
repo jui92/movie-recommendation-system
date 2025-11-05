@@ -1,6 +1,10 @@
 
 # show_st.py (streamlined: 추천 + 평가 대시보드)
-import os, joblib, numpy as np, pandas as pd, streamlit as st, altair as alt
+import os, joblib
+import numpy as np
+import pandas as pd
+import streamlit as st
+import altair as alt
 from pathlib import Path
 from autoint import AutoIntModel, predict_model
 
@@ -19,27 +23,50 @@ def _find_roots():
     model_dir = _pick(cwd/'model', here/'model', here.parent/'model')
     return data_dir, model_dir, here, cwd
 
-@st.cache_resource
-def load_data():
+@st.cache_resource(show_spinner=False)
+def load_data(weights_version: str = os.getenv("WEIGHTS_VERSION", "v1")):
     data_dir, model_dir, here, cwd = _find_roots()
     with st.sidebar:
-        st.write('**Path debug**')
-        st.write('script:', str(here))
-        st.write('cwd:', str(cwd))
-        st.write('data_dir:', str(data_dir))
-        st.write('model_dir:', str(model_dir))
+        st.write("**Path debug**")
+        st.write("script:", str(here))
+        st.write("cwd:", str(cwd))
+        st.write("data_dir:", str(data_dir))
+        st.write("model_dir:", str(model_dir))
     if data_dir is None or model_dir is None:
-        raise FileNotFoundError('data/ 또는 model/ 폴더를 찾을 수 없습니다.')
+        raise FileNotFoundError("data/ 또는 model/ 폴더를 찾지 못했습니다.")
 
     field_dims = np.load(data_dir/'field_dims.npy')
     ratings_df = pd.read_csv(data_dir/'ml-1m'/'ratings_prepro.csv')
     movies_df  = pd.read_csv(data_dir/'ml-1m'/'movies_prepro.csv')
     users_df   = pd.read_csv(data_dir/'ml-1m'/'users_prepro.csv')
 
-    model = AutoIntModel(field_dims, embed_dim=32, att_layer_num=4, att_head_num=4,
-                         att_res=True, dnn_hidden_units=[128,64,32], dnn_dropout=0.2)
-    _ = model(np.zeros((1, len(field_dims)), dtype='int64'))
-    model.load_weights(model_dir/'autoInt_model.weights.h5')
+    model = AutoIntModel(field_dims=field_dims, embed_dim=32, 
+                         att_layer_num=4, att_head_num=4, att_res=True,
+                         dnn_hidden_units=[128, 64, 32], dnn_dropout=0.2,)
+
+    _ = model(np.zeros((1, len(field_dims)), dtype="int64"))
+
+    weight_files = [model_dir/'autoInt_model.weights.h5',    
+                    model_dir/'autoInt_model_weights.h5',
+                    model_dir/'autoInt_model.h5']
+    loaded = False
+    last_err = None
+    for wf in weight_files:
+        if wf.exists():
+            try:
+                model.load_weights(str(wf), by_name=True, skip_mismatch=True)
+                loaded = True
+                break
+            except Exception as e:
+                last_err = e
+                continue
+
+    if not loaded:
+        msg = "가중치를 로드하지 못했습니다. 먼저 학습을 수행하거나(train_autoint_optimized.py), "\
+              "학습과 동일한 하이퍼파라미터로 저장된 파일명을 확인하세요."
+        if last_err:
+            msg += f"\n(마지막 오류: {type(last_err).__name__}: {last_err})"
+        st.warning(msg)
 
     encs = joblib.load(data_dir/'label_encoders.pkl')
     return users_df, movies_df, ratings_df, model, encs
