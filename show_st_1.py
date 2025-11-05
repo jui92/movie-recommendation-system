@@ -36,9 +36,9 @@ def load_data(weights_version: str = os.getenv("WEIGHTS_VERSION", "v1")):
         raise FileNotFoundError("data/ 또는 model/ 폴더를 찾지 못했습니다.")
 
     field_dims = np.load(data_dir/'field_dims.npy')
-    ratings_df = pd.read_csv(data_dir/'ml-1m'/'ratings_prepro.csv')
-    movies_df  = pd.read_csv(data_dir/'ml-1m'/'movies_prepro.csv')
-    users_df   = pd.read_csv(data_dir/'ml-1m'/'users_prepro.csv')
+    ratings_df = pd.read_csv(data_dir/'ratings_prepro.csv')
+    movies_df  = pd.read_csv(data_dir/'movies_prepro.csv')
+    users_df   = pd.read_csv(data_dir/'users_prepro.csv')
 
     model = AutoIntModel(field_dims=field_dims, embed_dim=32, 
                          att_layer_num=4, att_head_num=4, att_res=True,
@@ -194,13 +194,8 @@ def evaluate_model_sample(users_sample, k=10, max_items_per_user=300):
     for u in users_sample:
         df_u = ratings_df[ratings_df['user_id']==u]
         if df_u.empty: continue
-        tmp = (
-            df_u.merge(movies_df, on='movie_id', how='left')
-                .merge(users_df, on='user_id', how='left')
-                .head(max_items_per_user)
-                .reset_index(drop=True)
-                .copy()
-        )
+        tmp = (df_u.merge(movies_df, on='movie_id', how='left').merge(users_df, on='user_id', how='left')
+                .head(max_items_per_user).reset_index(drop=True).copy())
         if 'movie_decade' not in tmp:
             tmp['movie_decade'] = (tmp.get('movie_year', pd.Series([2000]*len(tmp))) // 10 * 10).astype(str) + 's'
         if 'rating_year' not in tmp:  tmp['rating_year']  = 2000
