@@ -150,8 +150,8 @@ def reasons_for(user_like_df, rec_df):
         g = [x for x in [r.get('genre1'), r.get('genre2'), r.get('genre3')] if x in liked_genres]
         d = (str(r.get('movie_decade')) in liked_decades)
         msg = []
-        if g: msg.append(f'선호 장르({', '.join(g)})')
-        if d: msg.append(f'선호 연대({r.get('movie_decade')})')
+        if g: msg.append(f"선호 장르({', '.join(g)})")
+        if d: msg.append(f"선호 연대({r.get('movie_decade')})")
         outs.append('; '.join(msg) if msg else '')
     rec_df = rec_df.copy()
     rec_df['why'] = outs
