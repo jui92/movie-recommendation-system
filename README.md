@@ -53,18 +53,18 @@ joblib==1.3.2
 
 ## 🚨 모델 개선 사항 + 예시 화면
 ### step 01. 사용자 ID, 추천 타겟 연도/월 입력시 사용자 기본 정보와 과거 이력과 함께 영화 추천
-<p align="center">
+<p align="left">
   <img src="https://velog.velcdn.com/images/qazsxdc/post/42ee0f0b-a395-4b9d-b494-28980db2997a/image.png" width="60%">
 </p>
 
 <br>
 
 ### step 02. 추가적으로 의도대로 움직이는지 확인하기 위해 streamlit 구성 변경.
-<p align="center">
+<p align="left">
   <img src="https://velog.velcdn.com/images/qazsxdc/post/bfa18bbe-f770-4900-9268-a6b55b75b0ae/image.png" width="60%">
 </p>
 
-<p align="center">
+<p align="left">
   <img src="https://velog.velcdn.com/images/qazsxdc/post/1c1b3039-e029-4594-9f53-1cf2b32d63a2/image.png" width="60%">
 </p>
 
@@ -105,7 +105,7 @@ score(모델 예측 확률)와 score_adj(최근작 가중 반영 후 점수)가 
 | **③** | 가중치 로딩 방식을 `by_name=True, skip_mismatch=True`로 수정하고, `.h5` → `.weights.h5` 두 포맷 모두 지원    | **배포 안정성 강화**        | 서로 다른 Keras/TensorFlow 버전에서도 깨지지 않고 로드 가능하게 함. (환경 불일치 대비)  |
 | **④** | 모델 초기화(워밍업) 유지 + 로드 실패 시 경고 메시지 명시                                                               |  **배포 안정성 강화**     | Streamlit 환경에서 로드 실패 시 앱이 멈추지 않고 사용자에게 명확한 피드백 제공              |
 
-<p align="center">
+<p align="left">
   <img src="https://velog.velcdn.com/images/qazsxdc/post/7b1b4216-905d-4d54-b2d5-3c059193293b/image.png" width="60%">
 </p>
 
@@ -155,7 +155,7 @@ score(모델 예측 확률)와 score_adj(최근작 가중 반영 후 점수)가 
 | 재랭킹  | 최근작 가중치(α), 장르 다양성(λ) 슬라이더        | 체감 품질↑(신선도/다양성 균형) |  정확도 상승          |
 | 대시보드 | **평가 탭**(AUC/Prec/Recall/NDCG 분포) | 빠른 진단·튜닝 루프        |  정확도 상승 & 안정성 |
 
-<p align="center">
+<p align="left">
   <img src="https://velog.velcdn.com/images/qazsxdc/post/6643aa0e-cead-4b7e-89df-63a8190d1421/image.png" width="60%">
 </p>
 
@@ -178,5 +178,6 @@ score(모델 예측 확률)와 score_adj(최근작 가중 반영 후 점수)가 
 | **Precision@10** | 0.85 ~ 0.88 | **0.90 ~ 0.91** | 추천 Top-10의 정확도 ↑               |
 | **Recall@10**    | 0.25 ~ 0.30 | **0.19 ±**      | Hard sample 중심 → 정밀도 ↑ / 재현율 ↓ |
 | **NDCG@10**      | 0.89 ~ 0.90 | **0.92 ~ 0.93** | 추천 순위 정렬 품질 ↑ (상위권 일관성 개선)     |
+
 
 
