@@ -82,7 +82,6 @@ score(모델 예측 확률)와 score_adj(최근작 가중 반영 후 점수)가 
   - 대부분의 사용자에서 AUC>0.7, Precision@K>0.8 이상 → 모델이 안정적
 - 하단 테이블
   - 개별 사용자 성능
-
   - 사용자별 Precision@K과 AUC 편차를 확인 가능 → 일부 낮은 유저는 Cold Start 가능성 있음
 
 
@@ -96,6 +95,7 @@ score(모델 예측 확률)와 score_adj(최근작 가중 반영 후 점수)가 
 | **④** | 모델 초기화(워밍업) 유지 + 로드 실패 시 경고 메시지 명시                                                               |  **배포 안정성 강화**     | Streamlit 환경에서 로드 실패 시 앱이 멈추지 않고 사용자에게 명확한 피드백 제공              |
 
 ![](https://velog.velcdn.com/images/qazsxdc/post/622d5c78-2365-4447-aa76-29d72145c276/image.png)
+
 
 
 
