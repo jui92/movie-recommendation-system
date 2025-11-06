@@ -27,8 +27,8 @@ movie-recommendation-system/
 │ └─ users_prepro.csv   
 │   
 ├─ model/   
-│ ├─ autoInt_model.h5 # ✅ 레거시 HDF5 (by_name 로드용)   
-│ ├─ autoInt_model.weights.h5 # ✅ Keras3 포맷 (fallback)   
+│ ├─ autoInt_model.h5 # 레거시 HDF5 (by_name 로드용)   
+│ ├─ autoInt_model.weights.h5 # Keras3 포맷 (fallback)   
 │ └─ metrics.json # 학습 로그(AUC, Precision@K 등)   
 │   
 ├─ train_autoint_optimized.py # 모델 학습 코드   
@@ -88,6 +88,7 @@ score(모델 예측 확률)와 score_adj(최근작 가중 반영 후 점수)가 
 | **④** | 모델 초기화(워밍업) 유지 + 로드 실패 시 경고 메시지 명시                                                               |  **배포 안정성 강화**     | Streamlit 환경에서 로드 실패 시 앱이 멈추지 않고 사용자에게 명확한 피드백 제공              |
 
 ![](https://velog.velcdn.com/images/qazsxdc/post/622d5c78-2365-4447-aa76-29d72145c276/image.png)
+
 
 
 
