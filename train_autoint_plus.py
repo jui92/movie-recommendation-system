@@ -1,6 +1,3 @@
-
-# train_autoint_plus.py
-# (see previous cell for detailed description)
 import os, json, joblib, numpy as np, pandas as pd, tensorflow as tf
 from pathlib import Path
 from sklearn.metrics import roc_auc_score
