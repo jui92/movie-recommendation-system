@@ -3,6 +3,8 @@
 **자동화된 딥러닝 추천 시스템 프로젝트**  
 Movielens 1M 데이터를 기반으로 **AutoInt 모델**을 학습하고, Streamlit을 통해 사용자 맞춤 영화 추천을 제공합니다.
 
+<br>
+
 ## 👀 주요 기능
 ✅ **AutoInt 모델 기반 추천**
 - Self-Attention과 DNN을 활용한 Feature Interaction 학습  
@@ -14,6 +16,8 @@ Movielens 1M 데이터를 기반으로 **AutoInt 모델**을 학습하고, Strea
 ✅ **사용자별 맞춤 추천**
 - 입력 사용자에 대해 미시청 영화 중 상위 N개 추천
 - 선호 장르/연대 기반 설명(`선호 장르(액션)`, `선호 연대(1990s)` 등)
+
+<br>
 
 ## 🧩 프로젝트 구조
 movie-recommendation-system/   
@@ -35,13 +39,17 @@ movie-recommendation-system/
 ├─ show_st.py # Streamlit 서비스 코드   
 └─ requirements.txt   
 
+<br>
+
 ## ⚙️ 환경 설정
-tensorflow==2.15.0.post1
-scikit-learn==1.3.2
-streamlit==1.39.0
-pandas==2.2.2
-numpy==1.26.4
-joblib==1.3.2
+tensorflow==2.15.0.post1   
+scikit-learn==1.3.2   
+streamlit==1.39.0   
+pandas==2.2.2   
+numpy==1.26.4   
+joblib==1.3.2   
+
+<br>
 
 ## 🚨 모델 개선 사항 + 예시 화면
 ### step 01. 사용자 ID, 추천 타겟 연도/월 입력시 사용자 기본 정보와 과거 이력과 함께 영화 추천
@@ -88,6 +96,7 @@ score(모델 예측 확률)와 score_adj(최근작 가중 반영 후 점수)가 
 | **④** | 모델 초기화(워밍업) 유지 + 로드 실패 시 경고 메시지 명시                                                               |  **배포 안정성 강화**     | Streamlit 환경에서 로드 실패 시 앱이 멈추지 않고 사용자에게 명확한 피드백 제공              |
 
 ![](https://velog.velcdn.com/images/qazsxdc/post/622d5c78-2365-4447-aa76-29d72145c276/image.png)
+
 
 
 
