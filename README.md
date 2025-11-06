@@ -6,9 +6,9 @@ Movielens 1M 데이터를 기반으로 **AutoInt 모델**을 학습하고, Strea
 ## 👀 주요 기능
 ✅ **AutoInt 모델 기반 추천**
 - Self-Attention과 DNN을 활용한 Feature Interaction 학습  
-- Embedding 및 Attention Layer 구조 확장으로 정확도 향상
+- Embedding 및 Attention Layer 구조 확장으로 정확도 향상   
 ✅ **정확도 시각화**
-- Precision@K, AUC, Loss 그래프 자동 저장 및 시각화
+- Precision@K, AUC, Loss 그래프 자동 저장 및 시각화   
 ✅ **사용자별 맞춤 추천**
 - 입력 사용자에 대해 미시청 영화 중 상위 N개 추천
 - 선호 장르/연대 기반 설명(`선호 장르(액션)`, `선호 연대(1990s)` 등)
@@ -86,4 +86,5 @@ score(모델 예측 확률)와 score_adj(최근작 가중 반영 후 점수)가 
 | **④** | 모델 초기화(워밍업) 유지 + 로드 실패 시 경고 메시지 명시                                                               |  **배포 안정성 강화**     | Streamlit 환경에서 로드 실패 시 앱이 멈추지 않고 사용자에게 명확한 피드백 제공              |
 
 ![](https://velog.velcdn.com/images/qazsxdc/post/622d5c78-2365-4447-aa76-29d72145c276/image.png)
+
 
